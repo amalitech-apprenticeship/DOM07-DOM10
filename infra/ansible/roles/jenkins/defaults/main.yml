@@ -1,0 +1,5 @@
+jenkins_version: 2.580.2-lts-jdk21
+jenkins_image: jenkins-custom
+jenkins_dir: /opt/jenkins
+jenkins_admin_id: admin
+jenkins_num_executors: 2

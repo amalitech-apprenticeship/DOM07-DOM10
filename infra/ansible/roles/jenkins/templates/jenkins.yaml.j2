@@ -1,0 +1,16 @@
+jenkins:
+  systemMessage: "Configured by Ansible + JCasC. Manual changes to these settings are reset on restart."
+  numExecutors: {{ jenkins_num_executors }}
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "${JENKINS_ADMIN_ID}"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+unclassified:
+  location:
+    url: "http://{{ ansible_host }}:8080/"

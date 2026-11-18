@@ -1,0 +1,67 @@
+- name: Create the build directory
+  ansible.builtin.file:
+    path: "{{ jenkins_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy the image build files
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ jenkins_dir }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - Dockerfile
+    - plugins.txt
+  register: jenkins_build_files
+
+- name: Create the Configuration as Code directory
+  ansible.builtin.file:
+    path: "{{ jenkins_dir }}/casc"
+    state: directory
+    mode: "0755"
+
+- name: Write the Configuration as Code file
+  ansible.builtin.template:
+    src: jenkins.yaml.j2
+    dest: "{{ jenkins_dir }}/casc/jenkins.yaml"
+    mode: "0644"
+  notify: Restart Jenkins
+
+- name: Build the Jenkins image (only rebuilds when those files change)
+  community.docker.docker_image:
+    name: "{{ jenkins_image }}"
+    tag: "{{ jenkins_version }}"
+    source: build
+    force_source: "{{ jenkins_build_files.changed }}"
+    build:
+      path: "{{ jenkins_dir }}"
+      pull: true
+      args:
+        JENKINS_TAG: "{{ jenkins_version }}"
+
+- name: Look up the docker group's ID on the server
+  ansible.builtin.getent:
+    database: group
+    key: docker
+
+- name: Run the Jenkins container
+  community.docker.docker_container:
+    name: jenkins
+    image: "{{ jenkins_image }}:{{ jenkins_version }}"
+    state: started
+    restart_policy: unless-stopped
+    published_ports:
+      - "8080:8080"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - "{{ jenkins_dir }}/casc/jenkins.yaml:/var/jenkins_home/casc/jenkins.yaml:ro"
+    groups:
+      - "{{ ansible_facts.getent_group.docker[1] }}"
+
+    env:
+      JAVA_OPTS: "-Djenkins.install.runSetupWizard=false"
+      CASC_JENKINS_CONFIG: /var/jenkins_home/casc/jenkins.yaml
+      JENKINS_ADMIN_ID: "{{ jenkins_admin_id }}"
+      JENKINS_ADMIN_PASSWORD: "{{ jenkins_admin_password }}"
+  no_log: true

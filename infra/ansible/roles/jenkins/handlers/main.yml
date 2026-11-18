@@ -1,0 +1,3 @@
+- name: Restart Jenkins
+  ansible.builtin.command: docker restart jenkins
+  changed_when: true

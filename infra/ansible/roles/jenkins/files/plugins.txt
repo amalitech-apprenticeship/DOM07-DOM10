@@ -1,0 +1,13 @@
+# Required by the project brief
+workflow-aggregator
+git
+credentials-binding
+docker-workflow
+ssh-agent
+
+# Needed in 6c, plus everyday quality-of-life plugins
+configuration-as-code
+github
+pipeline-stage-view
+timestamper
+ws-cleanup
