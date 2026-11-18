@@ -15,8 +15,8 @@ pipeline {
 
   environment {
     DOCKERHUB_USER = 'your-dockerhub-username'
-    IMAGE          = "${DOCKERHUB_USER}/bookstore"
-    APP_HOST       = '10.0.x.x'   // the app server's PRIVATE IP
+    IMAGE          = "amanamalitrain/bookstore"
+    APP_HOST       = '10.0.2.6'
   }
 
   stages {
