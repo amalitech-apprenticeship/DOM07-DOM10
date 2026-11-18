@@ -1,5 +1,10 @@
 resource "aws_vpc" "this" {
   cidr_block = "10.0.0.0/16"
+  enable_dns_hostnames = true
+
+  tags = {
+    Name = "bookstore-vpc"
+  }
 }
 
 resource "aws_internet_gateway" "this" {
@@ -19,11 +24,19 @@ resource "aws_route_table" "this" {
 resource "aws_subnet" "jenkins-subnet" {
   vpc_id     = aws_vpc.this.id
   cidr_block = "10.0.1.0/24"
+
+  tags = {
+    Name = "jenkins-subnet"
+  }
 }
 
 resource "aws_subnet" "server-subnet" {
   vpc_id     = aws_vpc.this.id
   cidr_block = "10.0.2.0/24"
+
+  tags = {
+    Name = "server-subnet"
+  }
 }
 
 resource "aws_route_table_association" "jenkins-subnet-association" {

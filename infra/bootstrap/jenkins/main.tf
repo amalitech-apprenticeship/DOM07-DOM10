@@ -8,11 +8,26 @@ data "aws_ami" "al2023" {
   }
 }
 
+data "aws_vpc" "this" {
+  tags = {
+    Name = "bookstore-vpc"
+  }
+}
+
+data "aws_subnet" "jenkins-subnet" {
+  vpc_id = data.aws_vpc.this.id
+
+  filter {
+    name   = "tag:Name"
+    values = ["jenkins-subnet"]
+  }
+}
+
 
 resource "aws_instance" "jenkins-server" {
   ami                         = data.aws_ami.al2023.id
-  instance_type               = "t3.small"
-  subnet_id                   = var.jenkins_subnet_id
+  instance_type               = "t3.medium"
+  subnet_id                   = data.aws_subnet.jenkins-subnet.id
   associate_public_ip_address = true
   vpc_security_group_ids      = [aws_security_group.jenkins-sg.id]
   iam_instance_profile        = aws_iam_instance_profile.jenkins.name
@@ -45,7 +60,7 @@ resource "aws_instance" "jenkins-server" {
 resource "aws_security_group" "jenkins-sg" {
   name        = "jenkins-sg"
   description = "Security group for Jenkins server"
-  vpc_id      = aws_vpc.this.id
+  vpc_id      = data.aws_vpc.this.id
 
   ingress {
     from_port   = 8080
