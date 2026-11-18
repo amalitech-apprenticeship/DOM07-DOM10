@@ -1,11 +1,10 @@
 variable "my_ip" {
   description = "Your public IP address for SSH access"
   type        = string
-}
-
-variable "public_key_path" {
-  description = "Path to the SSH public key used to reach Jenkins (for Ansible)"
-  type        = string
+  validation {
+    condition     = can(cidrhost(var.my_ip, 0)) && endswith(var.my_ip, "/32")
+    error_message = "my_ip must be a single IP in CIDR form, like 203.0.113.10/32."
+  }
 }
 
 variable "aws_region" {
