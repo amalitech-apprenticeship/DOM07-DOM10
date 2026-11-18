@@ -4,6 +4,7 @@ A small bookstore API built with Express and SQLite, plus a plain HTML/CSS/JS
 frontend. One Express app serves both, so the UI and the API run as one service
 on one port.
 
+
 ## Quick start
 
 ```bash
