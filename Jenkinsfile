@@ -14,7 +14,7 @@ pipeline {
   }
 
   environment {
-    DOCKERHUB_USER = 'your-dockerhub-username'
+    DOCKERHUB_USER = 'amanamlitrain'
     IMAGE          = "amanamalitrain/bookstore"
     APP_HOST       = '10.0.2.6'
   }
