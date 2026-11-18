@@ -147,3 +147,22 @@ test('POST /request-books always fails with 500 (intentional dummy error)', asyn
   assert.equal(res.status, 500);
   assert.deepEqual(await res.json(), { error: 'Internal server error' });
 });
+
+test('GET /metrics exposes Prometheus metrics', async () => {
+  const res = await fetch(`${baseUrl}/metrics`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /text\/plain/);
+  const text = await res.text();
+  assert.match(text, /http_requests_total/);
+  assert.match(text, /http_request_duration_seconds/);
+});
+
+test('GET /metrics labels requests by route pattern, not raw URL', async () => {
+  await fetch(`${baseUrl}/books/1`);
+
+  const text = await (await fetch(`${baseUrl}/metrics`)).text();
+  assert.match(text, /http_requests_total\{[^}]*route="\/books\/:id"[^}]*\} 1/);
+  assert.match(text, /http_request_duration_seconds_count\{[^}]*route="\/books\/:id"[^}]*\} 1/);
+  assert.doesNotMatch(text, /route="\/books\/1"/);
+  assert.doesNotMatch(text, /route="\/metrics"/, '/metrics scrapes are not counted');
+});

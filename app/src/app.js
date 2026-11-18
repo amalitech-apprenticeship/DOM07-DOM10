@@ -1,14 +1,80 @@
 const path = require('node:path');
 const express = require('express');
+const promClient = require('prom-client');
 const { createStore } = require('./store');
+
+// Prometheus metrics on a dedicated registry (not the global one), so every
+// app instance (e.g. one per test) has its own independent set of metrics.
+function createMetrics() {
+  const registry = new promClient.Registry();
+  promClient.collectDefaultMetrics({ register: registry });
+
+  const labelNames = ['method', 'route', 'status'];
+  const requestsTotal = new promClient.Counter({
+    name: 'http_requests_total',
+    help: 'Total number of HTTP requests',
+    labelNames,
+    registers: [registry],
+  });
+  const requestDuration = new promClient.Histogram({
+    name: 'http_request_duration_seconds',
+    help: 'HTTP request duration in seconds',
+    labelNames,
+    buckets: [0.01, 0.05, 0.1, 0.3, 0.5, 1, 2, 5],
+    registers: [registry],
+  });
+
+  return { registry, requestsTotal, requestDuration };
+}
+
+// Route PATTERN label (e.g. "/books/:id"), never the raw URL, to keep cardinality low.
+function routeLabel(req, res) {
+  if (req.route) return req.baseUrl + req.route.path;
+  if (res.locals.servedStatic) return 'static';
+  if (res.statusCode === 404) return 'not_found';
+  return 'unmatched'; // no route matched but not a 404, e.g. a malformed JSON body (400)
+}
 
 function createApp({ store = createStore() } = {}) {
   const app = express();
   app.locals.store = store; // lets server.js and tests close the database
+
+  const metrics = createMetrics();
+  app.locals.metricsRegistry = metrics.registry;
+
+  // Record a count and a duration for every request once the response is sent.
+  // Scrapes of /metrics itself are not counted.
+  app.use((req, res, next) => {
+    if (req.path === '/metrics') return next();
+    const endTimer = metrics.requestDuration.startTimer();
+    res.on('finish', () => {
+      const labels = { method: req.method, route: routeLabel(req, res), status: String(res.statusCode) };
+      metrics.requestsTotal.inc(labels);
+      endTimer(labels);
+    });
+    next();
+  });
+
   app.use(express.json());
 
   // Frontend: public/index.html is served at "/", plus styles.css and app.js.
-  app.use(express.static(path.join(__dirname, '..', 'public')));
+  // setHeaders only runs when a file is actually served, which marks it for the "static" label.
+  app.use(
+    express.static(path.join(__dirname, '..', 'public'), {
+      setHeaders: (res) => {
+        res.locals.servedStatic = true;
+      },
+    })
+  );
+
+  app.get('/metrics', async (req, res, next) => {
+    try {
+      res.set('Content-Type', metrics.registry.contentType);
+      res.send(await metrics.registry.metrics());
+    } catch (err) {
+      next(err);
+    }
+  });
 
   app.get('/health', (req, res) => {
     res.json({ status: 'ok', uptime: Math.round(process.uptime()) });
