@@ -340,7 +340,11 @@ function showOrder(order) {
   els.result.hidden = false;
 }
 
-const STATUS_TEXT = { 400: 'Bad Request', 404: 'Not Found', 409: 'Conflict', 500: 'Internal Server Error' };
+// 502/503/504 come from POST /orders when the payment service fails.
+const STATUS_TEXT = {
+  400: 'Bad Request', 404: 'Not Found', 409: 'Conflict', 500: 'Internal Server Error',
+  502: 'Bad Gateway', 503: 'Service Unavailable', 504: 'Gateway Timeout',
+};
 
 function retryAction() {
   return { label: 'Try again', run: () => els.form.requestSubmit() };

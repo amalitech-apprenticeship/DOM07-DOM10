@@ -1,0 +1,26 @@
+services:
+  bookstore:
+    build: ./app
+    ports:
+      - "3000:3000"
+    environment:
+      PAYMENT_URL: http://payment-service:4000
+      PAYMENT_TIMEOUT_MS: ${PAYMENT_TIMEOUT_MS:-2000}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - bookstore_data:/app/data
+    depends_on:
+      - payment-service
+
+  payment-service:
+    build: ./payment-service
+    ports:
+      - "4000:4000"
+    environment:
+      PAYMENT_DELAY_MS: ${PAYMENT_DELAY_MS:-0}
+      PAYMENT_DELAY_JITTER_MS: ${PAYMENT_DELAY_JITTER_MS:-0}
+      PAYMENT_FAILURE_RATE: ${PAYMENT_FAILURE_RATE:-0}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+volumes:
+  bookstore_data:

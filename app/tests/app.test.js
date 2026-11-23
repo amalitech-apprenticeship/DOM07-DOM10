@@ -1,19 +1,24 @@
 // Use an in-memory SQLite database so tests never touch a real file.
 // Must be set before the app (and its store) is loaded.
 process.env.DB_PATH = ':memory:';
+// No log output during tests. Must also be set before the app is loaded.
+process.env.LOG_LEVEL = 'silent';
 
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { createApp } = require('../src/app');
+const { approvedPaymentClient } = require('./helpers/fakePaymentClient');
 
 // Each test gets a fresh app with its own freshly seeded in-memory database,
-// listening on a random free port.
+// listening on a random free port. Payments always succeed here, through a
+// fake client with no network calls; payment failures are covered in
+// orders-payment.test.js.
 let app;
 let server;
 let baseUrl;
 
 beforeEach(async () => {
-  app = createApp();
+  app = createApp({ paymentClient: approvedPaymentClient() });
   server = app.listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
