@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Runs ON the app server, piped in over SSH by Jenkins.
-# Usage: deploy.sh <image:tag>
 set -euo pipefail
 
 IMAGE="$1"
@@ -13,9 +11,8 @@ docker run -d --name "$NAME" --restart unless-stopped \
   -v bookstore_data:/app/data \
   "$IMAGE"
 
-# Smoke test: give the app up to ~30 seconds to answer
 for i in $(seq 1 10); do
-  if curl -fsS http://localhost/ > /dev/null; then
+  if curl -fsS http://localhost/health > /dev/null; then
     echo "Deployed $IMAGE"
     docker image prune -f
     exit 0

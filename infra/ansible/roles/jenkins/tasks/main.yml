@@ -27,7 +27,7 @@
     mode: "0644"
   notify: Restart Jenkins
 
-- name: Build the Jenkins image (only rebuilds when those files change)
+- name: Build the Jenkins image
   community.docker.docker_image:
     name: "{{ jenkins_image }}"
     tag: "{{ jenkins_version }}"

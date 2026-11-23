@@ -12,11 +12,12 @@ pipeline {
   triggers {
     pollSCM('H/2 * * * *')
   }
+  // Look into webhooks
 
   environment {
-    DOCKERHUB_USER = 'amanamlitrain'
     IMAGE          = "amanamalitrain/bookstore"
-    APP_HOST       = '10.0.2.6'
+    APP_HOST       = '10.0.2.55'
+    // look into using the terraform output to get the app host instead of hardcoding it
   }
 
   stages {
@@ -29,36 +30,45 @@ pipeline {
       }
     }
 
-    stage('Install/Build') {
-      steps {
-        dir('app') { sh 'npm ci' }
-      }
+  stage('Node') {
+        agent {
+          docker {
+            image 'node:22'
+            reuseNode true
+          }
+        }
+        environment {
+          npm_config_cache = "${WORKSPACE}/.npm"
+        }
+        stages {
+          stage('Install') {
+            steps {
+              dir('app') { sh 'npm ci' }
+            }
+          }
+          stage('Test') {
+            steps {
+              dir('app') { sh 'npm test' }
+            }
+          }
+        }
     }
 
-    stage('Test') {
-      steps {
-        dir('app') { sh 'npm test' }
-      }
-    }
 
     stage('Docker Build') {
       steps {
-        dir('app') {
-          sh 'docker build -t "$IMAGE:$IMAGE_TAG" -t "$IMAGE:latest" .'
+        script {
+          docker.build("${env.IMAGE}:${env.IMAGE_TAG}", 'app')
         }
       }
     }
 
     stage('Push Image') {
       steps {
-        withCredentials([usernamePassword(credentialsId: 'registry_creds',
-                                          usernameVariable: 'REG_USER',
-                                          passwordVariable: 'REG_PASS')]) {
-          sh '''
-            echo "$REG_PASS" | docker login -u "$REG_USER" --password-stdin
-            docker push "$IMAGE:$IMAGE_TAG"
-            docker push "$IMAGE:latest"
-          '''
+        script {
+          docker.withRegistry('', 'registry_creds') {
+            docker.image("${env.IMAGE}:${env.IMAGE_TAG}").push()
+          }
         }
       }
     }
@@ -75,10 +85,10 @@ pipeline {
   post {
     always {
       sh '''
-        docker logout || true
         docker rmi "$IMAGE:$IMAGE_TAG" "$IMAGE:latest" || true
         docker image prune -f
       '''
     }
+    cleanWs()
   }
 }
