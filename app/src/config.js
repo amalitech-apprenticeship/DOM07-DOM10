@@ -10,6 +10,9 @@ function positiveNumber(value, fallback) {
 function loadConfig(env = process.env) {
   return {
     port: Number(env.PORT) || 3000,
+    // Metrics-only port (GET /metrics and nothing else). Kept off the public
+    // port so a security group can open it to the monitoring server only.
+    metricsPort: Number(env.METRICS_PORT) || 9464,
     dbPath: env.DB_PATH || './data/bookstore.db',
     // Where the payment service lives. In Docker this is the payment
     // container's name on the shared network, e.g. http://payment-service:4000.

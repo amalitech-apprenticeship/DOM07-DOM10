@@ -12,4 +12,7 @@ ENV NODE_ENV=production
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 EXPOSE 3000
+# Metrics-only port: serves GET /metrics and nothing else (METRICS_PORT).
+# Publish it so that only the monitoring server can reach it (security group).
+EXPOSE 9464
 CMD ["node", "src/server.js"]

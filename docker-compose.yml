@@ -1,8 +1,10 @@
 services:
   bookstore:
     build: ./app
+    container_name: bookstore
     ports:
-      - "3000:3000"
+      - "3000:3000"   # frontend
+      - "9464:9464"   # metrics
     environment:
       PAYMENT_URL: http://payment-service:4000
       PAYMENT_TIMEOUT_MS: ${PAYMENT_TIMEOUT_MS:-2000}
@@ -14,13 +16,37 @@ services:
 
   payment-service:
     build: ./payment-service
+    container_name: payment-service
     ports:
-      - "4000:4000"
+      - "9465:9464" # metrics
     environment:
       PAYMENT_DELAY_MS: ${PAYMENT_DELAY_MS:-0}
       PAYMENT_DELAY_JITTER_MS: ${PAYMENT_DELAY_JITTER_MS:-0}
       PAYMENT_FAILURE_RATE: ${PAYMENT_FAILURE_RATE:-0}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+    
+  cAdvisor:
+    image: cAdvisor/cadvisor:latest
+    container_name: cadvisor
+    privileged: true
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
 
 volumes:
   bookstore_data:

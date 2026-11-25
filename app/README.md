@@ -2,7 +2,7 @@
 
 A small bookstore API built with Express and SQLite, plus a plain HTML/CSS/JS
 frontend. One Express app serves both, so the UI and the API run as one service
-on one port.
+on one port. Prometheus metrics are served on a second, metrics-only port.
 
 Placing an order calls a second service, the **payment service**
 (`../payment-service`), over HTTP. To run both together locally, use
@@ -13,7 +13,7 @@ Placing an order calls a second service, the **payment service**
 
 ```bash
 npm install
-npm start          # runs src/server.js → http://localhost:3000
+npm start          # runs src/server.js → http://localhost:3000, metrics on :9464
 npm run dev        # same, restarts on file changes
 npm test           # runs the test suite with Node's built-in test runner
 ```
@@ -22,26 +22,46 @@ Requires Node 22 or later. Dependencies:
 
 - `express`: web framework
 - `better-sqlite3`: SQLite database
-- `prom-client`: Prometheus metrics at `/metrics`
+- `prom-client`: Prometheus metrics at `/metrics` on the metrics port
 - `pino`: structured JSON logger. OpenTelemetry can later add trace ids to its lines automatically.
 - `pino-http`: Express middleware that writes one pino log line per request
 
 Without the payment service running, browsing works but placing an order
 returns **503** ("Payment service is unavailable"). Start it with
-`cd ../payment-service && npm install && npm start`, or use docker compose.
+`cd ../payment-service && npm install && METRICS_PORT=9465 npm start`, or use
+docker compose. Both services default to metrics port 9464, so on one machine
+one of them needs a different `METRICS_PORT`; otherwise the second one exits
+at startup (see [Ports](#ports)).
 
 ### Running both services with docker compose
 
 From the repo root:
 
 ```bash
-docker compose up -d --build    # bookstore on :3000, payment service on :4000
+docker compose up -d --build    # bookstore on :3000, metrics on :9464 and :9465
 docker compose logs -f          # both services' JSON logs
 docker compose down             # stop (the bookstore_data volume keeps your orders)
 ```
 
 `docker-compose.yml` is for local development only. Jenkins and
-`scripts/deploy.sh` don't use it.
+`scripts/deploy.sh` don't use it. The payment service's port 4000 is not
+published: the bookstore reaches it by name over the compose network.
+
+## Ports
+
+| Port | Served by | Who should be able to reach it |
+| ---- | --------- | ------------------------------ |
+| `3000` (`PORT`; published as 80 on EC2) | The public app: frontend, API, `/health` | Everyone (shoppers, `deploy.sh`'s smoke test) |
+| `9464` (`METRICS_PORT`) | Metrics only: `GET /metrics`, every other path is a JSON 404 | The monitoring server only (security group) |
+
+`GET /metrics` on the public port is an ordinary 404. Both listeners share one
+metrics registry, so the metrics port reports the public app's requests.
+Requests to the metrics port are not counted in the http metrics and not logged.
+
+**If either port can't be opened** (for example, it's already in use), the
+process logs a `fatal` line and exits with code 1. It never runs without its
+metrics port, because `deploy.sh`'s smoke test only checks `/health` on the
+public port and wouldn't notice.
 
 ## Configuration
 
@@ -49,7 +69,8 @@ Settings come from environment variables. Each one has a default.
 
 | Variable  | Default               | Description                                         |
 | --------- | --------------------- | --------------------------------------------------- |
-| `PORT`    | `3000`                | Port the server listens on                          |
+| `PORT`    | `3000`                | Port the public app listens on                      |
+| `METRICS_PORT` | `9464`           | Metrics-only port (`GET /metrics`), on all interfaces (0.0.0.0) |
 | `DB_PATH` | `./data/bookstore.db` | SQLite database file, relative to where you start the server. Use `:memory:` for a throwaway in-memory database. |
 | `PAYMENT_URL` | `http://localhost:4000` | Base URL of the payment service. In Docker, use the payment container's name, e.g. `http://payment-service:4000`. |
 | `PAYMENT_TIMEOUT_MS` | `2000` | How long an order waits for the payment service before giving up with a 504 |
@@ -84,13 +105,14 @@ functions the routes call (`listBooks`, `findBook`, `createOrder`, `listOrders`,
 
 ```
 src/
-  server.js            entry point for "npm start": reads config, starts listening, logs crashes
+  server.js            entry point for "npm start": reads config, starts BOTH listeners, logs crashes
   app.js               createApp({ store, paymentClient, config }): ONLY wires the pieces below together
-  config.js            reads env vars (PORT, DB_PATH, PAYMENT_URL, PAYMENT_TIMEOUT_MS, LOG_LEVEL)
+  metricsApp.js        createMetricsApp(registry): the metrics-only app (GET /metrics, else 404)
+  config.js            reads env vars (PORT, METRICS_PORT, DB_PATH, PAYMENT_URL, PAYMENT_TIMEOUT_MS, LOG_LEVEL)
   store.js             SQLite access: schema, seeding, queries, the order transaction
   logger.js            the shared pino logger (JSON lines, service "bookstore")
   metrics.js           Prometheus registry + metric definitions
-  routeLabel.js        "/books/:id"-style route label, shared by metrics and logs
+  requestLabels.js     "/books/:id"-style route label and 499 status, shared by metrics and logs
   clients/
     paymentClient.js   calls POST /payments on the payment service (fetch + timeout)
   middleware/
@@ -102,7 +124,6 @@ src/
     health.js          GET /health
     books.js           GET /books, GET /books/:id
     orders.js          GET /orders, GET /orders/:id, POST /orders (with the payment step)
-    metrics.js         GET /metrics
     testing.js         POST /request-books: intentional 500, TEST ONLY, remove later
 public/
   index.html  the frontend page, served at "/"
@@ -126,7 +147,8 @@ in-memory database and a fake payment client.
 
 ## API
 
-All responses are JSON. Errors look like `{ "error": "message" }`.
+All responses are JSON. Errors look like `{ "error": "message" }`. These are
+on the public port (3000). `/metrics` is on the metrics port; see [Metrics](#metrics).
 
 | Method | Path          | Description                          |
 | ------ | ------------- | ------------------------------------ |
@@ -136,7 +158,6 @@ All responses are JSON. Errors look like `{ "error": "message" }`.
 | GET    | `/orders`     | All orders                           |
 | GET    | `/orders/:id` | One order, or 404                    |
 | POST   | `/orders`     | Place an order (charges the payment service) |
-| GET    | `/metrics`    | Prometheus metrics                   |
 | POST   | `/request-books` | **Test only:** always fails with 500, to test the error-rate alert. Remove later. |
 
 `/health` only checks the bookstore itself. It doesn't call the payment
@@ -205,8 +226,9 @@ A created order looks like:
 
 ## Metrics
 
-`GET /metrics` (Prometheus format). Dashboards depend on these names, labels
-and buckets, so don't change them:
+`GET /metrics` on the metrics port, `METRICS_PORT` (default 9464), in
+Prometheus format. It is not available on the public port (see [Ports](#ports)).
+Dashboards depend on these names, labels and buckets, so don't change them:
 
 | Metric | Type | Labels |
 | ------ | ---- | ------ |
@@ -218,7 +240,9 @@ and buckets, so don't change them:
 - **Route labels.** `route` is the route *pattern* (`/books/:id`, never `/books/1`).
   Requests that match no route are labelled `static` (frontend files),
   `not_found`, or `unmatched` (for example a malformed JSON body).
-- **What isn't counted.** Scrapes of `/metrics` itself.
+- **What isn't counted.** Anything sent to the metrics port, including the
+  scrapes themselves. A `GET /metrics` on the *public* port is a normal 404 and
+  is counted as `route="not_found", status="404"`, so probes show up.
 - **Status 499.** If the caller disconnects before the response is sent, the
   request is still counted and logged, with `status="499"` (nginx's "client
   closed request"). Otherwise slow requests whose caller gave up would vanish
@@ -240,7 +264,10 @@ Everything is logged as one JSON object per line on stdout (pino), ready for
 
 - **Every request** gets one line with `method`, `route` (the pattern),
   `status` and `durationMs`. The level is `error` for 5xx, `warn` for 4xx and
-  `info` otherwise. `/metrics` scrapes aren't logged.
+  `info` otherwise. Requests to the metrics port (Prometheus scrapes) aren't logged.
+- **Startup** logs one line per listener: `app listening on 3000` and
+  `metrics listening on 9464`. If either can't start, a `fatal` line is logged
+  and the process exits with code 1.
 - **Every payment call** gets a `"msg":"payment call"` line with `outcome`
   and `durationMs`. Failures are logged at `warn`, with a `reason`.
 - **Unexpected errors** (500s) get an `"msg":"unexpected error"` line at
@@ -313,8 +340,12 @@ a database file, never start `server.js`, and never need the payment service.
 
 - **app.test.js:** `GET /` serves the HTML page, `/health`, `/books`,
   `/books/:id` (including 404), `/orders/:id` (including 404), `POST /orders`
-  for 201, 400, 404 and 409, the test route, and `/metrics`. A fake payment
+  for 201, 400, 404 and 409, and the test route. A fake payment
   client that always approves is injected with `createApp({ paymentClient })`.
+  Also the metrics split: `GET /metrics` on the main app is a 404, and the
+  metrics app (`createMetricsApp(app.locals.metricsRegistry)` on its own random
+  port) serves metrics, 404s every other path, shows the main app's requests,
+  and doesn't count its own.
 - **orders-payment.test.js:** fake clients for approved, 5xx → 502,
   unreachable → 503 and timeout → 504. Checks that a failed payment leaves
   stock and orders unchanged, and that an invalid or out-of-stock order never
@@ -336,21 +367,35 @@ would return 503**. Update them before (or together with) merging this.
    `docker network create bookstore-net`, and start both containers with
    `--network bookstore-net`. On a user-defined network, containers find each
    other by container name.
-3. **The payment container.** Name it `payment-service` and give it no `-p`
-   flag: only the bookstore talks to it, over the shared network. Start it
-   *before* the bookstore. Fault settings (`PAYMENT_DELAY_MS`,
-   `PAYMENT_DELAY_JITTER_MS`, `PAYMENT_FAILURE_RATE`) default to 0, so pass
-   nothing in normal deploys.
+3. **The payment container.** Name it `payment-service` and publish **only**
+   its metrics port: `-p 9465:9464`. Do **not** publish 4000; only the
+   bookstore talks to it, over the shared network. Start it *before* the
+   bookstore. Fault settings (`PAYMENT_DELAY_MS`, `PAYMENT_DELAY_JITTER_MS`,
+   `PAYMENT_FAILURE_RATE`) default to 0, so pass nothing in normal deploys.
 4. **The bookstore container.** Same as today (`-p 80:3000`,
-   `-v bookstore_data:/app/data`), plus `--network bookstore-net` and
-   `-e PAYMENT_URL=http://payment-service:4000`. Optionally set
-   `-e PAYMENT_TIMEOUT_MS=2000`.
-5. **Ports.** The bookstore listens on 3000 (published as 80). The payment
-   service listens on 4000, internal only. Prometheus will need to reach
-   `/metrics` on both: either run Prometheus on the same Docker network, or
-   publish 4000 on a port that only the monitoring host can reach (security group).
+   `-v bookstore_data:/app/data`), plus `-p 9464:9464` (metrics),
+   `--network bookstore-net` and `-e PAYMENT_URL=http://payment-service:4000`.
+   Optionally set `-e PAYMENT_TIMEOUT_MS=2000`.
+5. **Ports and security group.** Both containers listen for metrics on 9464
+   inside; the host can't bind 9464 twice, so the payment service's metrics
+   go on host port 9465.
+
+   | Host port | Container | Serves | Reachable from |
+   | --------- | --------- | ------ | -------------- |
+   | 80 | bookstore:3000 | public app, `/health` | everyone (as today) |
+   | 9464 | bookstore:9464 | bookstore `/metrics` | monitoring server only |
+   | 9465 | payment-service:9464 | payment `/metrics` | monitoring server only |
+   | (none) | payment-service:4000 | `POST /payments` | not published; Docker network only |
+
+   The app server's security group needs two new **inbound** rules:
+   - TCP **9464**, source = the **monitoring server's security group** (not a CIDR, not `0.0.0.0/0`)
+   - TCP **9465**, source = the **monitoring server's security group**
+
+   Remove any inbound rule for 4000 if one exists. Prometheus then scrapes
+   `<app-server-private-ip>:9464` (job bookstore) and `:9465` (job payment-service).
 6. **Health checks.** `deploy.sh` can check `curl http://localhost/health` as
-   today. For the payment service, run
+   today. It doesn't need to check the metrics port: if that port can't open,
+   the container exits (code 1), so the smoke test fails anyway. For the payment service, run
    `docker exec payment-service node -e "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1))"`.
    The slim image has no curl.
 

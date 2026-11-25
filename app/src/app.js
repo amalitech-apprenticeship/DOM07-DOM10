@@ -9,6 +9,9 @@
 //   metrics + logging first (so they time everything),
 //   then body parsing, static files, routes,
 //   then "not found" and finally the error handler.
+//
+// There is no /metrics route here: metrics are served on a separate port by
+// metricsApp.js (see server.js), so GET /metrics on this app is a normal 404.
 
 const path = require('node:path');
 const express = require('express');
@@ -24,7 +27,6 @@ const { errorHandler } = require('./middleware/errorHandler');
 const { healthRoutes } = require('./routes/health');
 const { bookRoutes } = require('./routes/books');
 const { orderRoutes } = require('./routes/orders');
-const { metricsRoutes } = require('./routes/metrics');
 const { testingRoutes } = require('./routes/testing');
 
 function createApp({ store = createStore(), paymentClient, config = loadConfig() } = {}) {
@@ -39,7 +41,7 @@ function createApp({ store = createStore(), paymentClient, config = loadConfig()
 
   const app = express();
   app.locals.store = store; // lets server.js and tests close the database
-  app.locals.metricsRegistry = metrics.registry;
+  app.locals.metricsRegistry = metrics.registry; // served by metricsApp.js on METRICS_PORT
 
   app.use(requestMetrics(metrics));
   app.use(requestLogger());
@@ -55,7 +57,6 @@ function createApp({ store = createStore(), paymentClient, config = loadConfig()
     })
   );
 
-  app.use(metricsRoutes({ metrics }));
   app.use(healthRoutes());
   app.use(bookRoutes({ store }));
   app.use(orderRoutes({ store, paymentClient }));

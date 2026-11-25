@@ -8,14 +8,14 @@
 // labelled status="499" (see requestLabels.js). By then we also know which
 // route matched, for the "/books/:id" label.
 //
-// Scrapes of /metrics are skipped, so Prometheus polling every few seconds
-// doesn't drown out real traffic in the request rate and error rate.
+// Prometheus scrapes never reach this middleware: they go to the separate
+// metrics port (metricsApp.js), which doesn't mount it. A GET /metrics on the
+// public port is an ordinary 404 and is counted like one (route="not_found").
 
 const { routeLabel, statusLabel } = require('../requestLabels');
 
 function requestMetrics(metrics) {
   return (req, res, next) => {
-    if (req.path === '/metrics') return next();
     const endTimer = metrics.requestDuration.startTimer();
     res.once('close', () => {
       const labels = { method: req.method, route: routeLabel(req, res), status: String(statusLabel(res)) };

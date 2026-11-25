@@ -7,6 +7,7 @@ process.env.LOG_LEVEL = 'silent';
 const { test, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { createApp } = require('../src/app');
+const { createMetricsApp } = require('../src/metricsApp');
 const { approvedPaymentClient, failingPaymentClient } = require('./helpers/fakePaymentClient');
 
 let app;
@@ -85,7 +86,11 @@ test('payment failures are counted in http metrics with their 5xx status', async
   await start(failingPaymentClient('timeout'));
   await postOrder({ bookId: 1, quantity: 1 });
 
-  const text = await (await fetch(`${baseUrl}/metrics`)).text();
+  // Metrics live on the metrics-only app, which shares the main app's registry.
+  const metricsServer = createMetricsApp(app.locals.metricsRegistry).listen(0);
+  await new Promise((resolve) => metricsServer.once('listening', resolve));
+  const text = await (await fetch(`http://127.0.0.1:${metricsServer.address().port}/metrics`)).text();
+  await new Promise((resolve) => metricsServer.close(resolve));
   assert.match(text, /http_requests_total\{method="POST",route="\/orders",status="504"\} 1/);
 });
 

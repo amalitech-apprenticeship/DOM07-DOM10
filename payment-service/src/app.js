@@ -22,16 +22,14 @@ function createApp({ config = loadConfig(), random } = {}) {
   const metrics = createMetrics();
   const faults = createFaults(config, random);
   const app = express();
+  // There is no /metrics route on this app: server.js serves this registry on
+  // a separate metrics-only port (see metricsApp.js), so GET /metrics here is a 404.
+  app.locals.metricsRegistry = metrics.registry;
 
   // Metrics and logs first, so they see every request and its full duration.
   app.use(requestMetrics(metrics));
   app.use(httpLogger());
   app.use(express.json());
-
-  app.get('/metrics', async (req, res) => {
-    res.set('Content-Type', metrics.registry.contentType);
-    res.send(await metrics.registry.metrics());
-  });
 
   app.get('/health', (req, res) => {
     res.json({ status: 'ok', uptime: Math.round(process.uptime()) });

@@ -12,21 +12,40 @@ format as the bookstore's.
 
 ```bash
 npm install
-npm start          # http://localhost:4000
+npm start          # http://localhost:4000, metrics on :9464
 npm run dev        # restarts on file changes
 npm test           # Node's built-in test runner, no extra test packages
 ```
 
 To run it together with the bookstore, use `docker compose up -d --build` from
-the repo root (see `../docker-compose.yml`).
+the repo root (see `../docker-compose.yml`). If you run both with `npm start`
+on one machine instead, start this one with `METRICS_PORT=9465`: both default
+to 9464, and the second one to start would exit.
+
+## Ports
+
+| Port | Served by | Who should be able to reach it |
+| ---- | --------- | ------------------------------ |
+| `4000` (`PORT`) | The service: `POST /payments`, `/health` | Only the bookstore, over the Docker network. Not published. |
+| `9464` (`METRICS_PORT`) | Metrics only: `GET /metrics`, every other path is a JSON 404 | The monitoring server only (security group). docker compose and the EC2 host publish it as **9465**, because the bookstore already uses host port 9464. |
+
+`GET /metrics` on port 4000 is an ordinary 404. Both listeners share one
+metrics registry, so the metrics port reports the service's requests.
+Requests to the metrics port are not counted in the http metrics and not logged.
+
+**If either port can't be opened** (for example, it's already in use), the
+process logs a `fatal` line and exits with code 1. It never runs without its
+metrics port, because a health check only looks at `/health` on port 4000 and
+wouldn't notice.
 
 ## API
+
+These are on the service port (4000). `/metrics` is on the metrics port; see [Metrics](#metrics).
 
 | Method | Path        | Response |
 | ------ | ----------- | -------- |
 | POST   | `/payments` | `201 { "paymentId": "3f2c…", "status": "approved" }` |
 | GET    | `/health`   | `{ "status": "ok", "uptime": 12 }` |
-| GET    | `/metrics`  | Prometheus metrics |
 
 `POST /payments` body:
 
@@ -44,7 +63,8 @@ the repo root (see `../docker-compose.yml`).
 
 | Variable | Default | What it does |
 | -------- | ------- | ------------ |
-| `PORT` | `4000` | Port to listen on |
+| `PORT` | `4000` | Port the service listens on |
+| `METRICS_PORT` | `9464` | Metrics-only port (`GET /metrics`), on all interfaces (0.0.0.0) |
 | `PAYMENT_DELAY_MS` | `0` | Extra delay added to **every** payment, in ms |
 | `PAYMENT_DELAY_JITTER_MS` | `0` | Extra **random** delay between 0 and this value, in ms, on top of the fixed delay |
 | `PAYMENT_FAILURE_RATE` | `0` | Fraction of payments (0 to 1) that fail with a 500. `0.1` ≈ 1 in 10, `1` = all |
@@ -95,7 +115,8 @@ counter value: it really does jump back to 0 after every restart.
 
 ## Metrics
 
-`GET /metrics` exposes exactly the same http metrics as the bookstore, so one
+`GET /metrics` on the metrics port (`METRICS_PORT`, default 9464; host port
+9465 in docker compose) exposes exactly the same http metrics as the bookstore, so one
 dashboard panel or alert rule works for both (tell them apart by Prometheus's
 `job` / `instance` labels):
 
@@ -104,8 +125,9 @@ dashboard panel or alert rule works for both (tell them apart by Prometheus's
   `[0.01, 0.05, 0.1, 0.3, 0.5, 1, 2, 5]`
 - Node.js process metrics (`process_*`, `nodejs_*`)
 
-`route` is the pattern (`/payments`), not the raw URL. Scrapes of `/metrics`
-are not counted.
+`route` is the pattern (`/payments`), not the raw URL. Nothing sent to the
+metrics port is counted, scrapes included. A `GET /metrics` on port 4000 is a
+normal 404, counted as `route="not_found", status="404"`.
 
 **Status 499.** With `PAYMENT_DELAY_MS` above the bookstore's 2 s timeout, the
 bookstore hangs up before this service answers. Those requests are still
@@ -128,15 +150,21 @@ payment:
 {"level":"info","time":"2026-11-23T10:00:00.001Z","service":"payment-service","reqId":1,"method":"POST","route":"/payments","status":201,"durationMs":2,"msg":"request completed"}
 ```
 
-5xx request lines are logged at `error`, 4xx at `warn`. `/metrics` scrapes aren't logged.
+5xx request lines are logged at `error`, 4xx at `warn`. Requests to the metrics
+port (Prometheus scrapes) aren't logged.
+
+At startup it logs one line per listener (`app listening on 4000` with the
+fault settings, and `metrics listening on 9464`). If either can't start, it
+logs a `fatal` line and exits with code 1.
 
 ## Layout
 
 ```
 src/
-  server.js   entry point: reads config, starts listening, graceful shutdown
+  server.js   entry point: reads config, starts BOTH listeners, graceful shutdown
   app.js      createApp({ config, random }): routes, 404 and error handling
-  config.js   env vars -> config (PORT, PAYMENT_*, LOG_LEVEL)
+  metricsApp.js  createMetricsApp(registry): the metrics-only app (GET /metrics, else 404)
+  config.js   env vars -> config (PORT, METRICS_PORT, PAYMENT_*, LOG_LEVEL)
   faults.js   the delay / failure decisions (fault injection)
   metrics.js  Prometheus registry, http metrics, request-metrics middleware
   logger.js   pino logger + per-request JSON logging (pino-http)
@@ -148,7 +176,7 @@ tests/
 
 ```bash
 docker build -t payment-service .
-docker run --rm -p 4000:4000 -e PAYMENT_FAILURE_RATE=0.2 payment-service
+docker run --rm -p 4000:4000 -p 9465:9464 -e PAYMENT_FAILURE_RATE=0.2 payment-service
 ```
 
 Runs as the unprivileged `node` user. It has no volume, because it stores nothing.

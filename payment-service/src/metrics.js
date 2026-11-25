@@ -1,5 +1,6 @@
 // Prometheus metrics for the payment service: the registry, the http metrics,
-// and the middleware that records them. Used by app.js; served at GET /metrics.
+// and the middleware that records them. Used by app.js; metricsApp.js serves
+// them at GET /metrics on the metrics-only port.
 //
 // These are deliberately IDENTICAL to the bookstore's (app/src/metrics.js):
 // same names, labels and buckets. That way one Grafana panel or alert rule
@@ -48,13 +49,14 @@ function statusLabel(res) {
   return res.writableFinished ? res.statusCode : 499;
 }
 
-// Counts and times every request except scrapes of /metrics itself.
+// Counts and times every request to the main app. Prometheus scrapes never get
+// here: they go to the separate metrics port (metricsApp.js), which doesn't
+// mount this. A GET /metrics on the main port is a normal 404, counted as one.
 // Why "close" and not "finish": "close" fires for every request, including
 // ones whose caller disconnected. With "finish", exactly the slow requests
 // you're testing with PAYMENT_DELAY_MS would vanish from the latency metrics.
 function requestMetrics(metrics) {
   return (req, res, next) => {
-    if (req.path === '/metrics') return next();
     const endTimer = metrics.requestDuration.startTimer();
     res.once('close', () => {
       const labels = { method: req.method, route: routeLabel(req, res), status: String(statusLabel(res)) };

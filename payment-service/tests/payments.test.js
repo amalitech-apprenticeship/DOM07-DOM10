@@ -1,27 +1,49 @@
 // Tests for the payment service. Each test builds an app with its own config
 // (no env vars needed) and talks to it over HTTP on a random free port.
+// Like server.js, a metrics-only app shares the main app's registry and gets
+// its own random port (metricsUrl).
 process.env.LOG_LEVEL = 'silent'; // must be set before the app is loaded
 
 const { test, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { createApp } = require('../src/app');
+const { createMetricsApp } = require('../src/metricsApp');
 
 const NO_FAULTS = { delayMs: 0, delayJitterMs: 0, failureRate: 0 };
 
 let server;
 let baseUrl;
+let metricsServer;
+let metricsUrl;
+
+function listenOnFreePort(expressApp) {
+  const srv = expressApp.listen(0);
+  return new Promise((resolve) => srv.once('listening', () => resolve(srv)));
+}
 
 async function start(config = NO_FAULTS, random) {
   const app = createApp({ config: { ...NO_FAULTS, ...config }, random });
-  server = app.listen(0);
-  await new Promise((resolve) => server.once('listening', resolve));
+  server = await listenOnFreePort(app);
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+  metricsServer = await listenOnFreePort(createMetricsApp(app.locals.metricsRegistry));
+  metricsUrl = `http://127.0.0.1:${metricsServer.address().port}`;
 }
 
 afterEach(async () => {
-  server.closeAllConnections(); // don't wait for idle keep-alive connections
-  await new Promise((resolve) => server.close(resolve));
+  await Promise.all(
+    [server, metricsServer].map((srv) => {
+      srv.closeAllConnections(); // don't wait for idle keep-alive connections
+      return new Promise((resolve) => srv.close(resolve));
+    })
+  );
 });
+
+// The lines of http_requests_total in a scrape, e.g.
+// 'http_requests_total{method="POST",route="/payments",status="201"} 1'.
+async function requestCounterLines() {
+  const text = await (await fetch(`${metricsUrl}/metrics`)).text();
+  return text.split('\n').filter((line) => line.startsWith('http_requests_total{'));
+}
 
 function pay(body) {
   return fetch(`${baseUrl}/payments`, {
@@ -114,25 +136,60 @@ test('a caller that times out is still counted, as status 499', async () => {
     { name: 'TimeoutError' }
   );
 
-  const text = await (await fetch(`${baseUrl}/metrics`)).text();
+  const text = await (await fetch(`${metricsUrl}/metrics`)).text();
   assert.match(text, /http_requests_total\{method="POST",route="\/payments",status="499"\} 1/);
   assert.match(text, /http_request_duration_seconds_count\{method="POST",route="\/payments",status="499"\} 1/);
   assert.doesNotMatch(text, /route="\/payments",status="200"/, 'not mislabelled as a 200');
 });
 
-test('GET /metrics exposes the same http metrics as the bookstore', async () => {
+test('GET /metrics on the main app is a normal JSON 404', async () => {
+  await start();
+  const res = await fetch(`${baseUrl}/metrics`);
+  assert.equal(res.status, 404);
+  assert.deepEqual(await res.json(), { error: 'Route GET /metrics not found' });
+});
+
+test('metrics app: GET /metrics exposes the same http metrics as the bookstore', async () => {
   await start({ failureRate: 1 });
   await pay(PAYMENT);
-  await fetch(`${baseUrl}/metrics`); // scrapes are not counted
 
-  const res = await fetch(`${baseUrl}/metrics`);
+  const res = await fetch(`${metricsUrl}/metrics`);
   assert.equal(res.status, 200);
-  assert.match(res.headers.get('content-type'), /text\/plain/);
+  assert.match(res.headers.get('content-type'), /^text\/plain; version=0\.0\.4/);
   const text = await res.text();
   assert.match(text, /http_requests_total\{method="POST",route="\/payments",status="500"\} 1/);
   assert.match(text, /http_request_duration_seconds_count\{method="POST",route="\/payments",status="500"\} 1/);
   for (const le of ['0.01', '0.05', '0.1', '0.3', '0.5', '1', '2', '5', '\\+Inf']) {
     assert.match(text, new RegExp(`http_request_duration_seconds_bucket\\{le="${le}",method="POST"`), `bucket ${le}`);
   }
-  assert.doesNotMatch(text, /route="\/metrics"/);
+});
+
+test('metrics app: every other path is a JSON 404', async () => {
+  await start();
+  for (const [method, path] of [['GET', '/'], ['GET', '/health'], ['POST', '/payments'], ['POST', '/metrics']]) {
+    const res = await fetch(`${metricsUrl}${path}`, { method });
+    assert.equal(res.status, 404, `${method} ${path}`);
+    assert.deepEqual(await res.json(), { error: `Route ${method} ${path} not found` });
+  }
+});
+
+test("metrics app shows the main app's requests (shared registry)", async () => {
+  await start();
+  await pay(PAYMENT);
+  await fetch(`${baseUrl}/metrics`); // a probe on the main port: counted as a 404
+
+  const text = await (await fetch(`${metricsUrl}/metrics`)).text();
+  assert.match(text, /http_requests_total\{method="POST",route="\/payments",status="201"\} 1/);
+  assert.match(text, /http_requests_total\{method="GET",route="not_found",status="404"\} 1/);
+});
+
+test('requests to the metrics app are not counted in http_requests_total', async () => {
+  await start();
+  await pay(PAYMENT);
+  const before = await requestCounterLines();
+
+  for (const path of ['/metrics', '/metrics', '/nope']) await fetch(`${metricsUrl}${path}`);
+
+  assert.deepEqual(await requestCounterLines(), before);
+  assert.deepEqual(before, ['http_requests_total{method="POST",route="/payments",status="201"} 1']);
 });

@@ -1,5 +1,6 @@
 // Logging for the payment service: the shared pino logger, plus httpLogger(),
-// which app.js mounts to write one JSON line per request.
+// which app.js mounts to write one JSON line per request. Prometheus scrapes
+// aren't logged: they go to the metrics port (metricsApp.js), which doesn't mount it.
 // Same format as the bookstore's logs (only "service" differs), so in
 // CloudWatch you can search both services' logs the same way.
 //
@@ -29,7 +30,6 @@ function httpLogger() {
     logger,
     quietReqLogger: true, // don't dump every request header into the log
     quietResLogger: true,
-    autoLogging: { ignore: (req) => req.url === '/metrics' }, // Prometheus scrapes
     customLogLevel: (req, res, err) => {
       const status = statusLabel(res);
       if (err || status >= 500) return 'error';

@@ -1,7 +1,7 @@
 // Prometheus registry and metric definitions for the bookstore.
 // app.js creates one set per app; middleware/requestMetrics.js records the
 // http_* metrics, clients/paymentClient.js records the payment metric, and
-// routes/metrics.js serves them all at GET /metrics.
+// metricsApp.js serves them all at GET /metrics on the metrics port.
 //
 // DO NOT rename metrics, labels or buckets: Grafana dashboards and alert
 // rules query these exact names.

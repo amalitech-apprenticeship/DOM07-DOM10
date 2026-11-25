@@ -19,6 +19,9 @@ function number(value, fallback, min, max = Infinity) {
 function loadConfig(env = process.env) {
   return {
     port: number(env.PORT, 4000, 1, 65535),
+    // Metrics-only port (GET /metrics and nothing else). Kept off the service
+    // port so a security group can open it to the monitoring server only.
+    metricsPort: number(env.METRICS_PORT, 9464, 1, 65535),
     // Fixed extra delay added to every payment, in ms.
     delayMs: number(env.PAYMENT_DELAY_MS, 0, 0),
     // Random extra delay between 0 and this many ms, on top of delayMs.

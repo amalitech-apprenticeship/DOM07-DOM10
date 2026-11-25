@@ -14,6 +14,8 @@
 // Levels: 5xx -> error, 4xx -> warn, else info. Stack traces for unexpected
 // errors are logged by middleware/errorHandler.js, not here.
 // If the caller hangs up before we answer, status is 499 (see requestLabels.js).
+// Prometheus scrapes aren't logged: they go to the separate metrics port
+// (metricsApp.js), which doesn't mount this middleware.
 
 const pinoHttp = require('pino-http');
 const { logger } = require('../logger');
@@ -33,8 +35,6 @@ function requestLogger() {
     logger,
     quietReqLogger: true,
     quietResLogger: true,
-    // Same rule as the metrics: Prometheus scrapes are not logged.
-    autoLogging: { ignore: (req) => req.url === '/metrics' },
     customLogLevel: (req, res, err) => {
       const status = statusLabel(res);
       if (err || status >= 500) return 'error';
