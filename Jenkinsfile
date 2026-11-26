@@ -16,7 +16,7 @@ pipeline {
 
   environment {
     IMAGE          = "amanamalitrain/bookstore"
-    APP_HOST       = '10.0.2.55'
+    APP_HOST       = '10.0.2.229'
     // look into using the terraform output to get the app host instead of hardcoding it
   }
 
