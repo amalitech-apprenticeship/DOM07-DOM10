@@ -8,6 +8,8 @@ docker pull "$IMAGE"
 docker rm -f "$NAME" 2>/dev/null || true
 docker run -d --name "$NAME" --restart unless-stopped \
   -p 80:3000 \
+  -p 9464:9464 \
+  -p 9465:9464 \
   -v bookstore_data:/app/data \
   "$IMAGE"
 

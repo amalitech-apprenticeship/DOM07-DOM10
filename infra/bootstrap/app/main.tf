@@ -28,6 +28,11 @@ data "aws_security_group" "jenkins" {
   vpc_id = data.aws_vpc.this.id
 }
 
+data "aws_security_group" "monitoring" {
+  name   = "monitoring-sg"
+  vpc_id = data.aws_vpc.this.id
+}
+
 resource "aws_security_group" "app_sg" {
   name        = "app-sg"
   description = "Security group for the app server"
@@ -55,6 +60,38 @@ resource "aws_security_group" "app_sg" {
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = [var.my_ip]
+  }
+
+  ingress {
+    description = "Prometheus metrics endpoint bookstore"
+    from_port   = 9464
+    to_port     = 9464
+    protocol    = "tcp"
+    cidr_blocks = [data.aws_security_group.monitoring.id]
+  }
+
+  ingress {
+    description = "Prometheus metrics endpoint payment service"
+    from_port   = 9465
+    to_port     = 9465
+    protocol    = "tcp"
+    cidr_blocks = [data.aws_security_group.monitoring.id]
+  }
+
+  ingress {
+    description = "Prometheus metrics endpoint for node exporter"
+    from_port   = 9100
+    to_port     = 9100
+    protocol    = "tcp"
+    cidr_blocks = [data.aws_security_group.monitoring.id]
+  }
+
+  ingress {
+    description = "Prometheus metrics endpoint for cAdvisor"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = [data.aws_security_group.monitoring.id]
   }
 
   egress {
