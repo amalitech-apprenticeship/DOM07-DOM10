@@ -88,7 +88,7 @@ pipeline {
         docker rmi "$IMAGE:$IMAGE_TAG" "$IMAGE:latest" || true
         docker image prune -f
       '''
+      cleanWs()
     }
-    cleanWs()
   }
 }
