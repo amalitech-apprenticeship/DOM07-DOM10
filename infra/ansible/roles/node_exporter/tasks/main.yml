@@ -1,0 +1,12 @@
+# roles/exporters/tasks/main.yml
+- name: Run Node Exporter (host metrics)
+  community.docker.docker_container:
+    name: node_exporter
+    image: "{{ node_exporter_image }}"
+    state: started
+    restart_policy: unless-stopped
+    network_mode: host
+    pid_mode: host
+    volumes:
+      - /:/host:ro,rslave
+    command: --path.rootfs=/host

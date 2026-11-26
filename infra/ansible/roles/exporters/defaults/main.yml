@@ -1,4 +1,0 @@
-# roles/exporters/defaults/main.yml
-exporters_node_exporter_image: prom/node-exporter:1.13.1
-exporters_cadvisor_image: gcr.io/cadvisor/cadvisor:v0.61.1
-exporters_cadvisor_port: 8080
