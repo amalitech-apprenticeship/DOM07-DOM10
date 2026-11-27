@@ -1,0 +1,2 @@
+my_ip = "Your Ip Address"
+aws_region = "region where resources should be deployed"

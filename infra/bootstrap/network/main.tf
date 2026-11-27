@@ -1,5 +1,5 @@
 resource "aws_vpc" "this" {
-  cidr_block = "10.0.0.0/16"
+  cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
 
   tags = {
@@ -36,6 +36,14 @@ resource "aws_subnet" "server-subnet" {
 
   tags = {
     Name = "server-subnet"
+  }
+}
+
+resource "aws_subnet" "monitoring-subnet" {
+  vpc_id     = aws_vpc.this.id
+  cidr_block = "10.0.3.0/24"
+  tags = {
+    Name = "monitoring-subnet"
   }
 }
 

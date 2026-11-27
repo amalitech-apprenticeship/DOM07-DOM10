@@ -1,0 +1,8 @@
+monitoring_dir: /opt/monitoring
+monitoring_prometheus_image: prom/prometheus:v3.16.0
+monitoring_prometheus_port: 9090
+monitoring_grafana_image: grafana/grafana:13.3.2
+monitoring_grafana_port: 3000
+monitoring_prometheus_scrape_interval: 15s
+monitoring_prometheus_retention: 15d
+monitoring_grafana_admin_user: admin

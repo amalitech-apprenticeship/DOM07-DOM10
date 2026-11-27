@@ -4,3 +4,5 @@
 
   roles:
     - docker
+    - node_exporter
+    - cadvisor

@@ -1,0 +1,15 @@
+- name: Reload Prometheus
+  ansible.builtin.uri:
+    url: "http://localhost:{{ monitoring_prometheus_port }}/-/reload"
+    method: POST
+  register: monitoring_reload_result
+  until: monitoring_reload_result is succeeded
+  retries: 5
+  delay: 3
+
+- name: Restart Grafana
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_dir }}"
+    services:
+      - grafana
+    state: restarted

@@ -1,0 +1,46 @@
+- name: Create the monitoring folders
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ monitoring_dir }}"
+    - "{{ monitoring_dir }}/prometheus"
+    - "{{ monitoring_dir }}/prometheus/rules"
+    - "{{ monitoring_dir }}/grafana/provisioning"
+
+- name: Copy grafana dashboard and provisioning files
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ monitoring_dir }}/grafana/{{ item.dest }}"
+    mode: "0644"
+  loop:
+    - { src: "grafana/provisioning/", dest: "provisioning" }
+    - { src: "grafana/dashboards/", dest: "dashboards" }
+  notify: Restart Grafana
+
+- name: Write the Prometheus configuration file
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: "{{ monitoring_dir }}/prometheus/prometheus.yml"
+    mode: "0644"
+  notify: Reload Prometheus
+
+- name: Write the compose file
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ monitoring_dir }}/compose.yml"
+    mode: "0644"
+    backup: true
+
+- name: Write the secrets file for compose
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ monitoring_dir }}/.env"
+    mode: "0600"
+  no_log: true
+
+- name: Start the monitoring stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_dir }}"
+    state: present
