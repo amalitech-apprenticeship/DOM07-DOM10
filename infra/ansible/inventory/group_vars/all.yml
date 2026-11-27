@@ -1,0 +1,8 @@
+cadvisor_port: 8080
+node_exporter_port: 9100
+
+# The ports below are managed by Jenkins and published by deploy.sh
+bookstore_metrics_port: 9464
+payment_metrics_port: 9465
+
+aws_region: eu-west-1

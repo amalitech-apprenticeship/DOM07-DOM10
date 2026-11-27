@@ -1,0 +1,43 @@
+{{ ansible_managed }}
+
+global:
+  scrape_interval: {{ monitoring_prometheus_scrape_interval }}
+  evaluation_interval: {{ monitoring_prometheus_scrape_interval }}
+  external_labels:
+    cluster: monitoring
+
+rule_files:
+  - /etc/prometheus/rules/*.rules
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+{% for job, port in [('bookstore', bookstore_metrics_port), ('payment', payment_metrics_port), ('cadvisor', cadvisor_port)] %}
+  - job_name: {{ job }}
+    ec2_sd_configs:
+      - region: {{ aws_region }}
+        port: {{ port }}
+        filters:
+          - name: tag:Role
+            values: [app]
+          - name: instance-state-name
+            values: [running]
+    relabel_configs:
+      - source_labels: [__meta_ec2_tag_Name]
+        target_label: server
+
+{% endfor %}
+  - job_name: node
+    ec2_sd_configs:
+      - region: {{ aws_region }}
+        port: {{ node_exporter_port }}
+        filters:
+          - name: tag:Role
+            values: [app, monitoring]
+          - name: instance-state-name
+            values: [running]
+    relabel_configs:
+      - source_labels: [__meta_ec2_tag_Name]
+        target_label: server

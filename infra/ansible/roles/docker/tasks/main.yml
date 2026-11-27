@@ -1,7 +1,8 @@
-- name: Install Docker and the Python library Ansible's Docker modules need
+- name: Install Docker, Docker Compose, and the Python library Ansible's Docker modules need
   ansible.builtin.dnf:
     name:
       - docker
+      - docker-compose
       - python3-requests
     state: present
 

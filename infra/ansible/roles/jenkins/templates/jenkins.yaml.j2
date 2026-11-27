@@ -1,5 +1,7 @@
+{{ansible_managed}}
+
 jenkins:
-  systemMessage: "Configured by Ansible + JCasC. Manual changes to these settings are reset on restart."
+  systemMessage: "Ansible managed Jenkins instance"
   numExecutors: {{ jenkins_num_executors }}
   securityRealm:
     local:

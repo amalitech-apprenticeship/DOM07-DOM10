@@ -1,2 +1,1 @@
-# roles/exporters/defaults/main.yml
-node_exporter_image: prom/node-exporter:1.13.1
+node_exporter_image: prom/node-exporter:v1.13.1
