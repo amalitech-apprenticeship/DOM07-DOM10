@@ -6,3 +6,10 @@
   until: monitoring_reload_result is succeeded
   retries: 5
   delay: 3
+
+- name: Restart Grafana
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_dir }}"
+    services:
+      - grafana
+    state: restarted

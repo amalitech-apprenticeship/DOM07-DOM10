@@ -9,6 +9,16 @@
     - "{{ monitoring_dir }}/prometheus/rules"
     - "{{ monitoring_dir }}/grafana/provisioning"
 
+- name: Copy grafana dashboard and provisioning files
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ monitoring_dir }}/grafana/{{ item.dest }}"
+    mode: "0644"
+  loop:
+    - { src: "grafana/provisioning/", dest: "provisioning" }
+    - { src: "grafana/dashboards/", dest: "dashboards" }
+  notify: Restart Grafana
+
 - name: Write the Prometheus configuration file
   ansible.builtin.template:
     src: prometheus.yml.j2
