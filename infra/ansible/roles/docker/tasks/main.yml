@@ -12,6 +12,18 @@
     state: started
     enabled: true
 
+- name: Create the Docker CLI plugins folder
+  ansible.builtin.file:
+    path: /usr/local/lib/docker/cli-plugins
+    state: directory
+    mode: "0755"
+
+- name: Install the Docker Compose plugin
+  ansible.builtin.get_url:
+    url: "https://github.com/docker/compose/releases/download/{{ docker_compose_version }}/docker-compose-linux-x86_64"
+    dest: /usr/local/lib/docker/cli-plugins/docker-compose
+    mode: "0755"
+
 - name: Let ec2-user run docker without sudo
   ansible.builtin.user:
     name: ec2-user

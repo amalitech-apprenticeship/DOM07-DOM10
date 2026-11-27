@@ -1,0 +1,8 @@
+- name: Reload Prometheus
+  ansible.builtin.uri:
+    url: "http://localhost:{{ monitoring_prometheus_port }}/-/reload"
+    method: POST
+  register: monitoring_reload_result
+  until: monitoring_reload_result is succeeded
+  retries: 5
+  delay: 3
